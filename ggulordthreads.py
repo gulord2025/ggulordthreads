@@ -3,26 +3,34 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from aiogram.filters import Command
 import asyncio
 import logging
+import os
+from dotenv import load_dotenv
 from aiogram import Router
 
-API_TOKEN = "8181176657:AAFzf_yjbd6Np-SRd-E2hSTdKU1ZyNXiCuI"
+# Загружаем переменные из файла gggulord.env
+load_dotenv(dotenv_path="gggulord.env")
+
+# Получаем токен и ID администратора из переменных окружения
+API_TOKEN = os.getenv("API_TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")
+
+# Проверка, что токен успешно загружен
+if not API_TOKEN:
+    print("API_TOKEN не найден в .env файле!")
+    exit()
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
 
+# Инициализация бота
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 router = Router()
-
-# Хранение уникальных пользователей
-unique_users = set()
 
 # Главное меню
 @router.message(Command("start"))
 async def start(message: types.Message):
     user_id = message.from_user.id
-    unique_users.add(user_id)
-
     keyboard = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="Гайд"), KeyboardButton(text="Gulo Vision")]],
         resize_keyboard=True
@@ -37,9 +45,6 @@ async def start(message: types.Message):
 # Гайд
 @router.message(lambda message: message.text == "Гайд")
 async def send_guide(message: types.Message):
-    user_id = message.from_user.id
-    unique_users.add(user_id)
-
     keyboard = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="Назад"), KeyboardButton(text="Помощь")]],
         resize_keyboard=True
@@ -54,9 +59,6 @@ async def send_guide(message: types.Message):
 # Gulo Vision
 @router.message(lambda message: message.text == "Gulo Vision")
 async def send_gulo_vision_info(message: types.Message):
-    user_id = message.from_user.id
-    unique_users.add(user_id)
-
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Оплатить", url="https://linktw.in/SiXwAI")],
@@ -85,17 +87,18 @@ async def back_to_main(message: types.Message):
 # Статистика
 @router.message(Command("stats"))
 async def stats(message: types.Message):
-    if message.from_user.id == 123456789:  # Замени на свой ID
-        count = len(unique_users)
-        await message.answer(f"Количество уникальных пользователей: {count}")
+    if message.from_user.id == int(ADMIN_ID):
+        await message.answer(f"Количество уникальных пользователей: {len(set())}")
     else:
         await message.answer("У вас нет доступа к статистике.")
 
 # Регистрация роутера
 dp.include_router(router)
 
+# Запуск бота
 async def main():
+    # Запуск бота
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     asyncio.run(main())
