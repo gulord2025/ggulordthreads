@@ -31,6 +31,12 @@ router = Router()
 @router.message(Command("start"))
 async def start(message: types.Message):
     user_id = message.from_user.id
+    username = message.from_user.username
+
+    # Записываем пользователя в файл
+    with open("users_log.txt", "a", encoding="utf-8") as file:
+        file.write(f"{user_id} @{username}\n")
+
     keyboard = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="Гайд"), KeyboardButton(text="Gulo Vision")]],
         resize_keyboard=True
@@ -88,7 +94,14 @@ async def back_to_main(message: types.Message):
 @router.message(Command("stats"))
 async def stats(message: types.Message):
     if message.from_user.id == int(ADMIN_ID):
-        await message.answer(f"Количество уникальных пользователей: {len(set())}")
+        try:
+            with open("users_log.txt", "r", encoding="utf-8") as file:
+                users = set(file.readlines())  # Убираем дубликаты
+                count = len(users)
+        except FileNotFoundError:
+            count = 0
+
+        await message.answer(f"Количество уникальных пользователей: {count}")
     else:
         await message.answer("У вас нет доступа к статистике.")
 
@@ -97,7 +110,6 @@ dp.include_router(router)
 
 # Запуск бота
 async def main():
-    # Запуск бота
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
