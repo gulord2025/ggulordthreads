@@ -1,1 +1,1 @@
-bot: python3 ggulordthreads.py
+web: python3 ggulordthreads.py
