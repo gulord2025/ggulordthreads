@@ -14,17 +14,14 @@ import threading
 # Загружаем переменные из файла gggulord.env
 load_dotenv(dotenv_path="gggulord.env")
 
-# Получаем токен и ID администратора из переменных окружения
 API_TOKEN = os.getenv("API_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Проверка, что токен успешно загружен
 if not API_TOKEN:
     print("❌ API_TOKEN не найден в .env файле!")
     exit()
 
-# Приведение ADMIN_ID к int
 if ADMIN_ID:
     try:
         ADMIN_ID = int(ADMIN_ID)
@@ -35,15 +32,12 @@ else:
     print("❌ ADMIN_ID не найден в .env файле!")
     exit()
 
-# Логирование
 logging.basicConfig(level=logging.INFO)
 
-# Инициализация бота
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 router = Router()
 
-# Подключение к базе данных
 db = None
 
 async def create_db_pool():
@@ -61,13 +55,11 @@ async def create_db_pool():
         """)
         print("✅ База данных подключена и таблица создана (если её не было).")
 
-# Главное меню
 @router.message(Command("start"))
 async def start(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username
 
-    # Сохраняем пользователя в базу
     async with db.acquire() as conn:
         await conn.execute("""
             INSERT INTO users (user_id, username) VALUES ($1, $2)
@@ -79,13 +71,12 @@ async def start(message: types.Message):
         resize_keyboard=True
     )
     await message.answer(
-    "Добро пожаловать в бота GGulord Vision!\n\n"
-    "Нажмите кнопку \"Гайд\", чтобы получить бесплатный гайд.\n"
-    "Нажмите \"Gulo Vision\", чтобы узнать больше о закрытом сообществе.",
-    reply_markup=keyboard
+        "Добро пожаловать в бота GGulord Vision!\n\n"
+        "Нажмите кнопку \"Гайд\", чтобы получить бесплатный гайд.\n"
+        "Нажмите \"Gulo Vision\", чтобы узнать больше о закрытом сообществе.",
+        reply_markup=keyboard
     )
 
-# Гайд
 @router.message(lambda message: message.text == "Гайд")
 async def send_guide(message: types.Message):
     keyboard = ReplyKeyboardMarkup(
@@ -99,7 +90,6 @@ async def send_guide(message: types.Message):
         reply_markup=keyboard
     )
 
-# Gulo Vision
 @router.message(lambda message: message.text == "Gulo Vision")
 async def send_gulo_vision_info(message: types.Message):
     keyboard = InlineKeyboardMarkup(
@@ -117,20 +107,6 @@ async def send_gulo_vision_info(message: types.Message):
         reply_markup=keyboard
     )
 
-# Логирование сообщений
-@router.message()
-async def log_message(message: types.Message):
-    user_id = message.from_user.id
-    text = message.text
-
-    async with db.acquire() as conn:
-        await conn.execute("""
-            UPDATE users SET message_count = message_count + 1, 
-            clicked_buttons = clicked_buttons || $1 || ',' 
-            WHERE user_id = $2
-        """, text, user_id)
-
-# Получение ID пользователей
 @router.message(Command("getid"))
 async def getid(message: types.Message):
     if message.from_user.id == ADMIN_ID:
@@ -146,10 +122,8 @@ async def getid(message: types.Message):
     else:
         await message.answer("⛔ У вас нет доступа к этой команде.")
 
-# Регистрация роутера
 dp.include_router(router)
 
-# FastAPI для Render
 app = FastAPI()
 
 @app.get("/")
@@ -159,7 +133,11 @@ def read_root():
 def run_fastapi():
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
-# Запуск бота и FastAPI
+async def main():
+    await create_db_pool()
+    print("✅ Бот запущен и готов к работе.")
+    await dp.start_polling(bot)
+
 if __name__ == "__main__":
-    threading.Thread(target=run_fastapi).start()
+    threading.Thread(target=run_fastapi, daemon=True).start()
     asyncio.run(main())
