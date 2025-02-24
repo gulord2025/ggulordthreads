@@ -79,10 +79,10 @@ async def start(message: types.Message):
         resize_keyboard=True
     )
     await message.answer(
-        "Добро пожаловать в бота GGulord Vision!\n\n"
-        "Нажмите кнопку \"Гайд\", чтобы получить бесплатный гайд.\n"
-        "Нажмите \"Gulo Vision\", чтобы узнать больше о закрытом сообществе.",
-        reply_markup=keyboard
+    "Добро пожаловать в бота GGulord Vision!\n\n"
+    "Нажмите кнопку \"Гайд\", чтобы получить бесплатный гайд.\n"
+    "Нажмите \"Gulo Vision\", чтобы узнать больше о закрытом сообществе.",
+    reply_markup=keyboard
     )
 
 # Гайд
