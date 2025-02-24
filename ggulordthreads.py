@@ -6,6 +6,7 @@ import logging
 import os
 from dotenv import load_dotenv
 from aiogram import Router
+import asyncpg
 
 # Загружаем переменные из файла gggulord.env
 load_dotenv(dotenv_path="gggulord.env")
@@ -13,6 +14,7 @@ load_dotenv(dotenv_path="gggulord.env")
 # Получаем токен и ID администратора из переменных окружения
 API_TOKEN = os.getenv("API_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Проверка, что токен успешно загружен
 if not API_TOKEN:
@@ -27,15 +29,34 @@ bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 router = Router()
 
+# Подключение к базе данных
+db = None
+
+async def create_db_pool():
+    global db
+    db = await asyncpg.create_pool(DATABASE_URL)
+    async with db.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT UNIQUE NOT NULL,
+                username TEXT
+            )
+        """)
+        print("✅ База данных подключена и таблица создана (если её не было).")
+
 # Главное меню
 @router.message(Command("start"))
 async def start(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username
 
-    # Записываем пользователя в файл
-    with open("users_log.txt", "a", encoding="utf-8") as file:
-        file.write(f"{user_id} @{username}\n")
+    # Сохраняем пользователя в базу
+    async with db.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO users (user_id, username) VALUES ($1, $2)
+            ON CONFLICT (user_id) DO NOTHING
+        """, user_id, username)
 
     keyboard = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="Гайд"), KeyboardButton(text="Gulo Vision")]],
@@ -94,13 +115,8 @@ async def back_to_main(message: types.Message):
 @router.message(Command("stats"))
 async def stats(message: types.Message):
     if message.from_user.id == int(ADMIN_ID):
-        try:
-            with open("users_log.txt", "r", encoding="utf-8") as file:
-                users = set(file.readlines())  # Убираем дубликаты
-                count = len(users)
-        except FileNotFoundError:
-            count = 0
-
+        async with db.acquire() as conn:
+            count = await conn.fetchval("SELECT COUNT(*) FROM users")
         await message.answer(f"Количество уникальных пользователей: {count}")
     else:
         await message.answer("У вас нет доступа к статистике.")
@@ -110,6 +126,7 @@ dp.include_router(router)
 
 # Запуск бота
 async def main():
+    await create_db_pool()  # Подключение к базе перед стартом бота
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
