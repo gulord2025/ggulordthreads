@@ -18,7 +18,18 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Проверка, что токен успешно загружен
 if not API_TOKEN:
-    print("API_TOKEN не найден в .env файле!")
+    print("❌ API_TOKEN не найден в .env файле!")
+    exit()
+
+# Приведение ADMIN_ID к int
+if ADMIN_ID:
+    try:
+        ADMIN_ID = int(ADMIN_ID)
+    except ValueError:
+        print("❌ ADMIN_ID должен быть числом! Проверь .env файл.")
+        exit()
+else:
+    print("❌ ADMIN_ID не найден в .env файле!")
     exit()
 
 # Логирование
@@ -129,17 +140,23 @@ async def back_to_main(message: types.Message):
 # Получение ID пользователей
 @router.message(Command("getid"))
 async def getid(message: types.Message):
-    if message.from_user.id == int(ADMIN_ID):
+    print(f"✅ Команда /getid получена от {message.from_user.id}, ADMIN_ID={ADMIN_ID} (тип: {type(ADMIN_ID)})")
+
+    if message.from_user.id == ADMIN_ID:  # Теперь ADMIN_ID точно int
         async with db.acquire() as conn:
             users = await conn.fetch("SELECT user_id, username, message_count, clicked_buttons FROM users")
-        
-        response = "📊 Список пользователей:\n"
+
+        if not users:
+            await message.answer("⛔ В базе пока нет пользователей.")
+            return
+
+        response = "📊 **Список пользователей:**\n"
         for user in users:
-            response += f"ID: {user['user_id']}, Username: {user['username']}, Сообщений: {user['message_count']}, Кнопки: {user['clicked_buttons']}\n"
-        
-        await message.answer(response)
+            response += f"🆔 ID: {user['user_id']}, Username: @{user['username']}, Сообщений: {user['message_count']}, Кнопки: {user['clicked_buttons']}\n"
+
+        await message.answer(response, parse_mode="Markdown")
     else:
-        await message.answer("У вас нет доступа к этой команде.")
+        await message.answer("⛔ У вас нет доступа к этой команде.")
 
 # Регистрация роутера
 dp.include_router(router)
