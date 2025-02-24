@@ -1,85 +1,167 @@
 from aiogram import Bot, Dispatcher, types
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-import asyncpg
 import asyncio
+import logging
+import os
+from dotenv import load_dotenv
+from aiogram import Router
+import asyncpg
+from fastapi import FastAPI
+import uvicorn
+import threading
 
-TOKEN = "ТВОЙ_ТОКЕН_БОТА"
-ADMIN_ID = 123456789  # Укажи свой Telegram ID
+# Загружаем переменные из .env
+load_dotenv(dotenv_path="gggulord.env")
 
-# Подключение к БД
-async def create_db():
-    return await asyncpg.create_pool(
-        database="tg_bot_db",
-        user="your_user",
-        password="your_password",
-        host="localhost"
+API_TOKEN = os.getenv("API_TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not API_TOKEN:
+    print("❌ API_TOKEN не найден в .env файле!")
+    exit()
+
+if ADMIN_ID:
+    try:
+        ADMIN_ID = int(ADMIN_ID)
+    except ValueError:
+        print("❌ ADMIN_ID должен быть числом! Проверь .env файл.")
+        exit()
+else:
+    print("❌ ADMIN_ID не найден в .env файле!")
+    exit()
+
+logging.basicConfig(level=logging.INFO)
+
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
+router = Router()
+
+db = None
+
+async def create_db_pool():
+    global db
+    db = await asyncpg.create_pool(DATABASE_URL)
+    async with db.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT UNIQUE NOT NULL,
+                username TEXT,
+                message_count INT DEFAULT 0,
+                clicked_buttons TEXT DEFAULT ''
+            )
+        """)
+        print("✅ База данных подключена и таблица создана (если её не было).")
+
+@router.message(Command("start"))
+async def start(message: types.Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+
+    async with db.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO users (user_id, username) VALUES ($1, $2)
+            ON CONFLICT (user_id) DO NOTHING
+        """, user_id, username)
+
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Гайд"), KeyboardButton(text="Gulo Vision")]],
+        resize_keyboard=True
+    )
+    await message.answer(
+        "Добро пожаловать в бота GGulord Vision!\n\n"
+        "Нажмите кнопку \"Гайд\", чтобы получить бесплатный гайд.\n"
+        "Нажмите \"Gulo Vision\", чтобы узнать больше о закрытом сообществе.",
+        reply_markup=keyboard
     )
 
-# Бот и диспетчер
-bot = Bot(token=TOKEN, parse_mode="HTML")
-dp = Dispatcher()
-db = None  # База данных (инициализируется позже)
-
-# Главное меню
-main_keyboard = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="Гайд"), KeyboardButton(text="Gulo Vision")]],
-    resize_keyboard=True
-)
-
-# Функция старта
-@dp.message(Command("start"))
-async def start_command(message: types.Message):
-    await message.answer("Привет! Добро пожаловать в бота.", reply_markup=main_keyboard)
-
-# Обработчик кнопки "Гайд"
-@dp.message(lambda message: message.text == "Гайд")
+@router.message(lambda message: message.text == "Гайд")
 async def send_guide(message: types.Message):
-    guide_keyboard = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Назад"), KeyboardButton(text="Помощь")]],
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Назад"), KeyboardButton(text="Помощь")]
+        ],
         resize_keyboard=True
     )
     await message.answer(
         "Спасибо за ваш интерес к блогерству и саморазвитию!\n\n"
-        "📘 Гайд: [Перейти к гайду](https://docs.google.com/presentation/d/1kWBBM4I_wArYXtGrp0SwtmiFVj1uxwLfMTVtIu3RGYM/edit?usp=sharing)",
-        reply_markup=guide_keyboard,
-        parse_mode="Markdown"
+        "📘 [Гайд](https://docs.google.com/presentation/d/1kWBBM4I_wArYXtGrp0SwtmiFVj1uxwLfMTVtIu3RGYM/edit?usp=sharing)",
+        parse_mode="Markdown",
+        reply_markup=keyboard
     )
 
-# Обработчик кнопки "Помощь"
-@dp.message(lambda message: message.text and "Помощь" in message.text)
-async def help_command(message: types.Message):
-    await message.answer("🤖 Поддержка: [Связаться](https://t.me/pavel_gulo)", parse_mode="Markdown")
+@router.message(lambda message: message.text == "Назад")
+async def go_back(message: types.Message):
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Гайд"), KeyboardButton(text="Gulo Vision")]],
+        resize_keyboard=True
+    )
+    await message.answer("Вы вернулись в главное меню.", reply_markup=keyboard)
 
-# Обработчик кнопки "Назад"
-@dp.message(lambda message: message.text and "Назад" in message.text)
-async def back_to_main(message: types.Message):
-    await message.answer("🔙 Вы вернулись в главное меню.", reply_markup=main_keyboard)
+@router.message(lambda message: message.text == "Помощь")
+async def send_help(message: types.Message):
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Назад")]],
+        resize_keyboard=True
+    )
+    await message.answer(
+        "🔹 **Помощь**\n\n"
+        "Если у вас возникли вопросы, напишите в поддержку: [@pavel_gulo](https://t.me/pavel_gulo)",
+        parse_mode="Markdown",
+        reply_markup=keyboard
+    )
 
-# Команда /getid (только для ADMIN_ID)
-@dp.message(Command("getid"))
+@router.message(lambda message: message.text == "Gulo Vision")
+async def send_gulo_vision_info(message: types.Message):
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Оплатить", url="https://linktw.in/SiXwAI")],
+            [InlineKeyboardButton(text="Кейсы Павла Гуло", url="https://t.me/+8XvQcRpxKMc4MGRi")],
+            [InlineKeyboardButton(text="Помощь", url="https://t.me/pavel_gulo")]
+        ]
+    )
+    await message.answer(
+        "🔹 **Что такое Gulo Vision?**\n\n"
+        "Gulo Vision — это закрытое сообщество для тех, кто хочет прокачать свое мышление, научиться зарабатывать на своем контенте и масштабировать свои проекты."
+        "\n\n🔗 [Оплатить через Lava.top](https://linktw.in/SiXwAI)",
+        parse_mode="Markdown",
+        reply_markup=keyboard
+    )
+
+@router.message(Command("getid"))
 async def getid(message: types.Message):
     if message.from_user.id == ADMIN_ID:
         async with db.acquire() as conn:
             users = await conn.fetch("SELECT user_id, username, message_count, clicked_buttons FROM users")
-        
         if not users:
             await message.answer("⛔ В базе пока нет пользователей.")
             return
-
-        response = "📊 **Список пользователей:**\n"
+        response = "📊 **Список пользователей:**\n\n"
         for user in users:
-            response += f"🆔 ID: `{user['user_id']}`, Username: @{user['username']}, Сообщений: {user['message_count']}, Кнопки: `{user['clicked_buttons']}`\n\n"
-
+            username = f"@{user['username']}" if user['username'] else "—"
+            response += f"🆔 **ID:** {user['user_id']}\n👤 **Username:** {username}\n💬 **Сообщений:** {user['message_count']}\n🔘 **Кнопки:** {user['clicked_buttons']}\n\n"
         await message.answer(response, parse_mode="Markdown")
     else:
         await message.answer("⛔ У вас нет доступа к этой команде.")
 
-# Запуск бота
+dp.include_router(router)
+
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"status": "bot is running"}
+
+def run_fastapi():
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
 async def main():
-    global db
-    db = await create_db()
+    await create_db_pool()
+    print("✅ Бот запущен и готов к работе.")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    threading.Thread(target=run_fastapi, daemon=True).start()
     asyncio.run(main())
