@@ -40,7 +40,9 @@ async def create_db_pool():
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 user_id BIGINT UNIQUE NOT NULL,
-                username TEXT
+                username TEXT,
+                message_count INT DEFAULT 0,
+                clicked_buttons TEXT DEFAULT ''
             )
         """)
         print("✅ База данных подключена и таблица создана (если её не было).")
@@ -101,6 +103,19 @@ async def send_gulo_vision_info(message: types.Message):
         reply_markup=keyboard
     )
 
+# Логирование сообщений
+@router.message()
+async def log_message(message: types.Message):
+    user_id = message.from_user.id
+    text = message.text
+
+    async with db.acquire() as conn:
+        await conn.execute("""
+            UPDATE users SET message_count = message_count + 1, 
+            clicked_buttons = clicked_buttons || $1 || ',' 
+            WHERE user_id = $2
+        """, text, user_id)
+
 # Помощь
 @router.message(lambda message: message.text == "Помощь")
 async def help_command(message: types.Message):
@@ -111,15 +126,20 @@ async def help_command(message: types.Message):
 async def back_to_main(message: types.Message):
     await start(message)
 
-# Статистика
-@router.message(Command("stats"))
-async def stats(message: types.Message):
+# Получение ID пользователей
+@router.message(Command("getid"))
+async def getid(message: types.Message):
     if message.from_user.id == int(ADMIN_ID):
         async with db.acquire() as conn:
-            count = await conn.fetchval("SELECT COUNT(*) FROM users")
-        await message.answer(f"Количество уникальных пользователей: {count}")
+            users = await conn.fetch("SELECT user_id, username, message_count, clicked_buttons FROM users")
+        
+        response = "📊 Список пользователей:\n"
+        for user in users:
+            response += f"ID: {user['user_id']}, Username: {user['username']}, Сообщений: {user['message_count']}, Кнопки: {user['clicked_buttons']}\n"
+        
+        await message.answer(response)
     else:
-        await message.answer("У вас нет доступа к статистике.")
+        await message.answer("У вас нет доступа к этой команде.")
 
 # Регистрация роутера
 dp.include_router(router)
