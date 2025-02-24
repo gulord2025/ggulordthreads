@@ -1,1 +1,1 @@
-web: python3 ggulordthreads.py
+web: bash start.sh
